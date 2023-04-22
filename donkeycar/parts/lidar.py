@@ -468,6 +468,67 @@ class LidarPlot(object):
     def shutdown(self):
         pass
 
+#rbx
+class LidarProcessor(object):
+    """
+    class that will handle the conversion of raw LIDAR data into a 2D image
+    """
+    def __init__(self, lidar_data, height, width):
+        self.height = height
+        self.width = width
+
+    def update(self, lidar_data):
+        # Convert LIDAR data to image
+        distances = lidar_data[:, 1]
+        angles = lidar_data[:, 2]
+        # transform polar coordinates into Cartesian coordinates
+        x = distances * np.cos(np.radians(angles))
+        y = distances * np.sin(np.radians(angles))
+        # shift the origin to the center of the image
+        x += self.width // 2
+        y += self.height // 2
+        # clip the points to the image size
+        x = np.clip(x, 0, self.width - 1)
+        y = np.clip(y, 0, self.height - 1)
+        # convert the Cartesian coordinates into a grayscale image
+        image = np.zeros((self.height, self.width, 1), dtype=np.uint8)
+        image[y.astype(int), x.astype(int)] = 255
+        return image
+
+    def run(self, lidar_data):
+        return self.update(lidar_data)
+
+    def run_threaded(self, lidar_data):
+        return self.run(lidar_data)
+
+
+
+#class LidarProcessor:
+
+    #def __init__(self, lidar_h, lidar_w):
+    #    self.lidar_h = lidar_h
+    #    self.lidar_w = lidar_w
+
+    #def update(self, raw_lidar_data):
+    #    # Convert raw LIDAR data to a 2D image
+    #    # This is just an example, and you should replace it with your specific conversion method
+    #    lidar_image = np.zeros((self.lidar_h, self.lidar_w), dtype=np.float32)#
+   
+    #    for point in raw_lidar_data:
+    #        x, y, z, intensity = point
+    #        row, col = self._project_point(x, y, z)
+    #        lidar_image[row, col] = intensity
+
+    #    return lidar_image
+
+    #def _project_point(self, x, y, z):
+    #    # Project 3D point (x, y, z) to 2D image coordinates (row, col)
+    #    # This is just an example, and you should replace it with your specific projection method
+    #    row = int(self.lidar_h * (y / (x + y + z)))
+    #    col = int(self.lidar_w * (x / (x + y + z)))
+
+    #    return max(0, min(self.lidar_h - 1, row)), max(0, min(self.lidar_w - 1, col))
+#rbx
 
 def mark_line(draw_context, cx, cy,
               distance_px, theta_degrees,
