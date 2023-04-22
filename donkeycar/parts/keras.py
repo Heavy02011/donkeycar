@@ -311,6 +311,22 @@ class KerasCategorical(KerasPilot):
         """ For printing model initialisation """
         return super().__str__() + f'-R:{self.throttle_range}'
 
+#rbx
+class KerasCategoricalLidar(KerasCategorical):
+    def __init__(self, input_shape, lidar_shape, num_outputs, *args, **kwargs):
+        img_in = Input(shape=input_shape, name='img_in')
+        lidar_in = Input(shape=lidar_shape, name='lidar_in')
+        outputs = default_categorical_lidar(img_in, lidar_in, num_outputs)
+        self.model = Model(inputs=[img_in, lidar_in], outputs=outputs)
+        self.compile()
+
+    def run(self, img_arr, lidar_data):
+        img_arr = img_arr.reshape((1,) + img_arr.shape)
+        lidar_data = lidar_data.reshape((1,) + lidar_data.shape)
+        angle_binned, throttle = self.model.predict([img_arr, lidar_data])
+        angle_unbinned = linear_unbin(angle_binned)
+        return angle_unbinned, throttle[0][0]
+#rbx
 
 class KerasLinear(KerasPilot):
     """
@@ -902,6 +918,40 @@ def default_categorical(input_shape=(120, 160, 3)):
                   name='categorical')
     return model
 
+#rbx
+def default_categorical_lidar(img_in, lidar_in, num_outputs):
+    # Camera branch
+    x = Conv2D(24, (5, 5), strides=(2, 2), activation='relu')(img_in)
+    x = Conv2D(32, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(64, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(64, (3, 3), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(x)
+    x = Flatten(name='flattened')(x)
+    x = Dense(100, activation='linear')(x)
+    x = Dropout(.1)(x)
+    x = Dense(50, activation='linear')(x)
+    x = Dropout(.1)(x)
+    camera_branch = Dense(10, activation='linear')(x)
+
+    # LIDAR branch
+    y = Conv2D(16, (3, 3), activation='relu')(lidar_in)
+    y = MaxPooling2D((2, 2))(y)
+    y = Conv2D(32, (3, 3), activation='relu')(y)
+    y = MaxPooling2D((2, 2))(y)
+    y = Flatten()(y)
+    y = Dense(64, activation='relu')(y)
+    lidar_branch = Dense(10, activation='relu')(y)
+
+    # Combine branches
+    combined = Concatenate()([camera_branch, lidar_branch])
+
+    # Final dense layers
+    z = Dense(50, activation='relu')(combined)
+    z = Dropout(.2)(z)
+    outputs = Dense(num_outputs, activation='softmax', name='model_outputs')(z)
+
+    return outputs
+#rbx
 
 def default_imu(num_outputs, num_imu_inputs, input_shape):
     drop = 0.2
