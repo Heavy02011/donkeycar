@@ -43,10 +43,15 @@ class HyboLidar(object):
                  batch_ms=5000,  # how long to loop in run()
                  debug=False):
     
-
         self.lidar = None
         self.port = None
         self.on = False
+
+        self.min_angle     = min_angle
+        self.max_angle     = max_angle
+        self.min_distance  = min_distance
+        self.max_distance  = max_distance
+        self.forward_angle = forward_angle
 
         self.measurements = [] # list of (distance, angle, time, scan, index) 
 
@@ -73,6 +78,7 @@ class HyboLidar(object):
         # initialize
         self.port = result[0]
         print(f"Found & Connecting to {self.port}")
+        print(f"parameters: {min_angle, max_angle, min_distance, max_distance, forward_angle, angle_direction, batch_ms}")
         self.hybo = hybo.Lidar(self.port)
         self.hybo.start()
         time.sleep(1)
@@ -94,32 +100,53 @@ class HyboLidar(object):
                 # read one measurement
                 #
                 #new_scan, quality, angle, distance = next(self.iter_measurements)  # noqa
-                raw_scan = self.hybo.get_latest_frame()  # noqa
-                sequence  = raw_scan["sequence"]
-                time_peak = raw_scan["time_peak"]
-                points    = raw_scan["points"]/1000. # convert from mm to m
-                distances = np.sqrt(np.sum((np.array(points))**2, axis=1))
-                angles    = np.arctan2(points[:, 1], points[:, 0]) # 90deg to the front, rising counterclockwise
-
-                # skip scans too close & far
-                lim_min = 0.2 #-70000
-                lim_max = 7.0
-                mask = (distances >= lim_min) & (distances <= lim_max)
-
+                raw_scan  = self.hybo.get_latest_frame()  # noqa
+                sequence   = raw_scan["sequence"]
+                time_peak  = raw_scan["time_peak"]
+                points     = raw_scan["points"]/1000. # convert from mm to m
+                distances  = np.sqrt(np.sum((np.array(points))**2, axis=1))
+                angles     = np.arctan2(points[:, 1], points[:, 0]) # 90deg to the front, rising counterclockwise
+                angles_deg = np.rad2deg(angles) # convert to deg 
+                
+                # skip scans too close & far and within given angles (deg!)
+                mask = (distances >= self.min_distance) & (distances <= self.max_distance) & (angles_deg >= self.min_angle) & (angles_deg <= self.max_angle)
                 # Apply the mask
-                filtered_angles    = angles[mask]
-                filtered_distances = distances[mask]
-                filtered_points    = points[mask]
+                filtered_angles     = angles[mask]
+                filtered_angles_deg = angles_deg[mask]
+                filtered_distances  = distances[mask]
+                filtered_points     = points[mask]
 
-                # test: show all points
-                print(sequence, time_peak)
-                for iscan in range(len(filtered_points)):
-                    print(filtered_distances[iscan], np.rad2deg(filtered_angles[iscan]))
-                                        
-                # save measurements
-                self.measurements.append(raw_scan)
-                now = time.time()
-                self.total_measurements += 1
+                # save measurement if present
+                if len(filtered_points) > 0:
+                    print(sequence, time_peak)
+                    # for iscan in range(len(filtered_points)):
+                        # print(filtered_distances[iscan], np.rad2deg(filtered_angles[iscan]))
+                                            
+                    # save measurements
+                    #self.measurements.append(raw_scan)
+                    now = time.time()
+                    
+                    #-------------------------------------------------------------
+                    # Create an empty list to store the measurements
+                    measurements_list = []
+
+                    # Iterate through the filtered points and create measurement tuples
+                    for iscan in range(len(filtered_points)):
+                        distance = filtered_distances[iscan]
+                        angle = filtered_angles[iscan]
+
+                        # Create a tuple with the measurement data
+                        measurement = (distance, angle, now, self.full_scan_count, iscan)
+
+                        # Append the measurement tuple to the list
+                        measurements_list.append(measurement)
+
+                    # Save the measurements list
+                    self.measurements.append(measurements_list)
+                    print(measurements_list)
+                    #-------------------------------------------------------------    
+                
+                    self.total_measurements += 1
 
                 # check for start of new scan
                 if raw_scan:
@@ -401,3 +428,5 @@ if __name__ == "__main__":
             cv2.destroyAllWindows()
         if lidar_thread is not None:
             lidar_thread.join()  # wait for thread to end
+
+# python lidar_hybo.py -n 40000 -d 0.2 -D 7.0 -a 0 -A 360 -f 90 
