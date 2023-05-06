@@ -26,6 +26,7 @@ class Safety:
         self.measurement_batch_ms = batch_ms
         self.emergency_braking = False
         self.running = True
+        self.throttle = 0.2
 
     def poll(self): # gets called by update(), here is all the work load of the part
         if self.running:
@@ -50,10 +51,12 @@ class Safety:
                         # print(collision_time)
                         if (distance > 0.2 and distance < 0.8):
                             self.emergency_braking = True
-                            print(f"<<<<<<<<<<<<<< breaking {distance} >>>>>>>>>>>>>>>>>>")
+                            self.throttle = 0.0
+                            print(f"<<<<<<<<<<<<<< breaking {distance, self.throttle} >>>>>>>>>>>>>>>>>>")
                             break
                     """
                     """
+                print(f"\n>>>>> DRIVING {self.throttle} >>>>>>>>>\n")
             except:
                 logger.error('Exception from safety.py.')
 
@@ -73,27 +76,29 @@ class Safety:
                     break
             """
 
-    def update(self, speed, measurements):
+    def update(self, speed, measurements, throttle):
         start_time = time.time()
         while self.running:
             self.poll()
             time.sleep(0)  # yield time to other threads
         self.speed = speed
         self.measurements = measurements
+        self.throttle = throttle
 
     # def run_threaded(self, speed, measurements):
     def run_threaded(self):
         if self.running:
-            return self.emergency_braking
+            return self.emergency_braking, self.throttle
         return False
 
     # def run(self):
-    def run(self, speed, measurements):
+    def run(self, speed, measurements, throttle):
         if not self.running:
-            return False
+            return False, 0.0
         
         self.speed = speed
         self.measurements = measurements
+        self.throttle = throttle
         #
         # poll for 'batch' and return it
         # poll for time provided in constructor
@@ -105,7 +110,7 @@ class Safety:
             if time.time() >= batch_time:
                 break
 
-        return self.emergency_braking
+        return self.emergency_braking, self.throttle
      
 
 if __name__ == "__main__":
@@ -135,7 +140,8 @@ if __name__ == "__main__":
         min_distance=0.2, max_distance=1.0,
         forward_angle=90,
         angle_direction=COUNTER_CLOCKWISE,
-        batch_ms=1000.0/20.)
+        batch_ms=50.)
+        # batch_ms=1000.0/20.)
     print(f"main: Connected to lidar.")
 
     V.add(lidar, outputs=['measurements'], threaded=True)
@@ -144,24 +150,7 @@ if __name__ == "__main__":
     speed = 1 #m/s
     safety = Safety()
     V.add(safety,
-          inputs=['speed', 'measurements'],
-          outputs=['emergency_braking'], threaded=False)
-
-    class Brake:
-        def __init__(self):
-            pass
-
-        def run(self, emergency_braking, throttle):
-            if emergency_braking:
-                return 0.0
-                print("3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3")
-            else:
-                return throttle
-            # return 0.0 if emergency_braking else throttle
-
-    brake = Brake()
-    V.add(brake,
-          inputs=['emergency_braking', 'throttle'],
-          outputs=['throttle'])
+          inputs=['speed', 'measurements', 'throttle'],
+          outputs=['emergency_braking', 'throttle'], threaded=False)
     
     V.start()
