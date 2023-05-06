@@ -1,5 +1,6 @@
 import sys
 import cv2
+import time
 import numpy as np
 from donkeycar.vehicle import Vehicle
 from donkeycar.parts.controller import LocalWebController
@@ -17,44 +18,95 @@ class Safety:
     The brake function is responsible for setting the throttle to zero if an obstacle is likely to collide with the car. 
     The main function sets up a Vehicle object, adds the required parts, and starts the vehicle.
     """
-    def __init__(self, threshold=1.0):
+    def __init__(self, threshold=1.0, batch_ms=500):
         # self.lidar = HyboLidar() # RPLidar2()
         self.speed = 0
         self.threshold = threshold
         self.measurements = []
-        #self.lidar.min_distance = 150    # RPlidar A2M8
-        #self.lidar.max_distance = 18000  # RPlidar A2M8
-        # self.lidar.min_distance = 20     # ldrobot D300 ld06
-        # self.lidar.max_distance = 12000  # ldrobot D300 ld06
+        self.measurement_batch_ms = batch_ms
+        self.emergency_braking = False
+        self.running = True
+
+    def poll(self): # gets called by update(), here is all the work load of the part
+        if self.running:
+            try:
+                #
+                # read one measurement
+                #
+                # Unpack measurements
+                if len(self.measurements) > 0:
+                    # print(len(self.measurements))
+                    for measurement in self.measurements:
+                        distance, angle, timestamp, full_scan_count, scan_index = measurement
+                        # print("Distance:", distance)
+                        # print("Angle:", angle)
+                        # print("Timestamp:", timestamp)
+                        # print("Full Scan Count:", full_scan_count)
+                        # print("Scan Index:", scan_index)
+                        # print("-----")
+            
+                        # collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
+                        # collision_time = distance / max(self.speed * np.cos(angle), 0.001)
+                        # print(collision_time)
+                        if (distance > 0.2 and distance < 0.8):
+                            self.emergency_braking = True
+                            print(f"<<<<<<<<<<<<<< breaking {distance} >>>>>>>>>>>>>>>>>>")
+                            break
+                    """
+                    """
+            except:
+                logger.error('Exception from safety.py.')
 
 
-    def update(self, speed):
+            """
+            for distance, angle, _, _, _ in measurements:
+                #print(distance, angle)
+                #if np.isnan(distance) or distance < self.lidar.min_distance or distance > self.lidar.max_distance:
+                    #continue
+                #    print(f"skipping: {distance}")
+                collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
+                # if angle > 150.or angle < 210.:
+                print(f"angle, distance: {angle}, {distance} ")
+                #if distance / max(self.speed * np.cos(np.deg2rad(angle)), 0.001) < self.threshold:
+                if collision_time < self.threshold:
+                    emergency_braking = True
+                    break
+            """
+
+    def update(self, speed, measurements):
+        start_time = time.time()
+        while self.running:
+            self.poll()
+            time.sleep(0)  # yield time to other threads
         self.speed = speed
+        self.measurements = measurements
 
+    # def run_threaded(self, speed, measurements):
+    def run_threaded(self):
+        if self.running:
+            return self.emergency_braking
+        return False
+
+    # def run(self):
     def run(self, speed, measurements):
-        # distances given in m
-        emergency_braking = False
-        print("Measurements:", len(measurements))
-        #print("Measurements:", measurements)
+        if not self.running:
+            return False
         
-        """
-        for distance, angle, _, _, _ in measurements:
-            #print(distance, angle)
-            #if np.isnan(distance) or distance < self.lidar.min_distance or distance > self.lidar.max_distance:
-                #continue
-            #    print(f"skipping: {distance}")
-            collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
-            #print(collision_time)
-            # if angle > 150.or angle < 210.:
-            print(f"angle, distance: {angle}, {distance} ")
-            #if distance / max(self.speed * np.cos(np.deg2rad(angle)), 0.001) < self.threshold:
-            if collision_time < self.threshold:
-                emergency_braking = True
-                print(f"<<<<<<<<<<<<<< breaking >>>>>>>>>>>>>>>>>>")
+        self.speed = speed
+        self.measurements = measurements
+        #
+        # poll for 'batch' and return it
+        # poll for time provided in constructor
+        #
+        batch_time = time.time() + self.measurement_batch_ms / 1000.0
+        while True:
+            self.poll()
+            time.sleep(0)  # yield time to other threads
+            if time.time() >= batch_time:
                 break
-        """
 
-        return emergency_braking
+        return self.emergency_braking
+     
 
 if __name__ == "__main__":
     V = Vehicle()
@@ -93,20 +145,23 @@ if __name__ == "__main__":
     safety = Safety()
     V.add(safety,
           inputs=['speed', 'measurements'],
-          outputs=['emergency_braking'])
+          outputs=['emergency_braking'], threaded=False)
 
     class Brake:
         def __init__(self):
             pass
 
         def run(self, emergency_braking, throttle):
-            return 0.0 if emergency_braking else throttle
+            if emergency_braking:
+                return 0.0
+                print("3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3")
+            else:
+                return throttle
+            # return 0.0 if emergency_braking else throttle
 
     brake = Brake()
     V.add(brake,
           inputs=['emergency_braking', 'throttle'],
           outputs=['throttle'])
-    """
-    """
     
     V.start()

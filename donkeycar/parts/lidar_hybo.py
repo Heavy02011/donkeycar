@@ -118,7 +118,7 @@ class HyboLidar(object):
 
                 # save measurement if present
                 if len(filtered_points) > 0:
-                    print(sequence, time_peak)
+                    print(f"HyboLidar: {sequence, time_peak}")
                     # for iscan in range(len(filtered_points)):
                         # print(filtered_distances[iscan], np.rad2deg(filtered_angles[iscan]))
                                             
@@ -142,8 +142,9 @@ class HyboLidar(object):
                         measurements_list.append(measurement)
 
                     # Save the measurements list
-                    self.measurements.append(measurements_list)
-                    print(measurements_list)
+                    # self.measurements.append(measurements_list)
+                    self.measurements = measurements_list
+                    # print(measurements_list)
                     #-------------------------------------------------------------    
                 
                     self.total_measurements += 1
