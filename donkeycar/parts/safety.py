@@ -32,13 +32,19 @@ class Safety:
         # distances given in mm
         emergency_braking = False
         print("Measurements:", len(measurements))
+        #print("Measurements:", measurements)
         
         for distance, angle, _, _, _ in measurements:
             #print(distance, angle)
-            if np.isnan(distance) or distance < self.lidar.min_distance or distance > self.lidar.max_distance:
+            #if np.isnan(distance) or distance < self.lidar.min_distance or distance > self.lidar.max_distance:
                 #continue
-                print(f"skipping: {distance}")
-            if distance / max(self.speed * np.cos(np.deg2rad(angle)), 0.001) < self.threshold:
+            #    print(f"skipping: {distance}")
+            collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
+            #print(collision_time)
+            if angle > 150.or angle < 210.:
+                print(f"angle, distance: {angle}, {distance} ")
+            #if distance / max(self.speed * np.cos(np.deg2rad(angle)), 0.001) < self.threshold:
+            if collision_time < self.threshold:
                 emergency_braking = True
                 break
 
@@ -65,29 +71,10 @@ if __name__ == "__main__":
         batch_ms=1000./20.)
     """
 
-    """
-    def convert_from_image_to_cv2(img: Image) -> np.ndarray:
-        # return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        return np.asarray(img)
-    
-    plotter = LidarPlot2(plot_type=LidarPlot2.PLOT_TYPE_CIRCLE,
-                            max_dist=6000.0,
-                            angle_direction=CLOCKWISE,
-                            rotate_plot=0.,
-                            background_color=(32, 32, 32),
-                            border_color=(128, 128, 128),
-                            point_color=(64, 255, 64))  
-    measurements = lidar.run_threaded()
-    img = plotter.run(measurements)
-    # show the image in the window
-    cv2img = convert_from_image_to_cv2(img)
-    cv2.imshow("lidar", cv2img)
-    """
-
     V.add(lidar, outputs=['measurements'], threaded=True)
     #print(measurements)
 
-    speed = 3 #m/s
+    speed = 1 #m/s
     safety = Safety()
     V.add(safety,
           inputs=['speed', 'measurements'],
