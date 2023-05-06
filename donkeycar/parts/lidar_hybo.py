@@ -430,3 +430,8 @@ if __name__ == "__main__":
             lidar_thread.join()  # wait for thread to end
 
 # python lidar_hybo.py -n 40000 -d 0.2 -D 7.0 -a 0 -A 360 -f 90 
+# 
+# testing safety node
+# (donkey) rainer@donkeynano10:~/projects/donkeycar/donkeycar/parts$ 
+# python lidar_hybo.py -n 40000 -d 00.2 -D 1.0 -a 70 -A 110 -f 90 
+
