@@ -76,26 +76,28 @@ class Safety:
                     break
             """
 
-    def update(self, speed, measurements, throttle):
+    # def update(self, speed, measurements, throttle):
+    def update(self):
         start_time = time.time()
         while self.running:
             self.poll()
             time.sleep(0)  # yield time to other threads
-        self.speed = speed
-        self.measurements = measurements
-        self.throttle = throttle
+        # self.speed = speed
+        # self.measurements = measurements
+        # self.throttle = throttle
 
     # def run_threaded(self, speed, measurements):
     def run_threaded(self):
-        if self.running:
-            return self.emergency_braking, self.throttle
-        return False
+        # if self.running:
+        return self.emergency_braking, self.throttle
+        # return False, self.throttle
 
     # def run(self):
     def run(self, speed, measurements, throttle):
         if not self.running:
             return False, 0.0
-        
+        self.poll()
+
         self.speed = speed
         self.measurements = measurements
         self.throttle = throttle
