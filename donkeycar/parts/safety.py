@@ -5,7 +5,7 @@ import numpy as np
 from donkeycar.vehicle import Vehicle
 from donkeycar.parts.controller import LocalWebController
 from donkeycar.parts.lidar import RPLidar2, CLOCKWISE, LidarPlot2
-from donkeycar.parts.lidar_d300 import D300Lidar
+# from donkeycar.parts.lidar_d300 import D300Lidar
 from donkeycar.parts.lidar_hybo import HyboLidar
 from PIL import Image, ImageDraw
 
