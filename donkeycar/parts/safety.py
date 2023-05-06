@@ -5,8 +5,11 @@ from donkeycar.vehicle import Vehicle
 from donkeycar.parts.controller import LocalWebController
 from donkeycar.parts.lidar import RPLidar2, CLOCKWISE, LidarPlot2
 from donkeycar.parts.lidar_d300 import D300Lidar
+from donkeycar.parts.lidar_hybo import HyboLidar
 from PIL import Image, ImageDraw
 
+CLOCKWISE = 1
+COUNTER_CLOCKWISE = -1
 
 class Safety:
     """
@@ -15,25 +18,26 @@ class Safety:
     The main function sets up a Vehicle object, adds the required parts, and starts the vehicle.
     """
     def __init__(self, threshold=1.0):
-        self.lidar = RPLidar2()
+        # self.lidar = HyboLidar() # RPLidar2()
         self.speed = 0
         self.threshold = threshold
         self.measurements = []
         #self.lidar.min_distance = 150    # RPlidar A2M8
         #self.lidar.max_distance = 18000  # RPlidar A2M8
-        self.lidar.min_distance = 20     # ldrobot D300 ld06
-        self.lidar.max_distance = 12000  # ldrobot D300 ld06
+        # self.lidar.min_distance = 20     # ldrobot D300 ld06
+        # self.lidar.max_distance = 12000  # ldrobot D300 ld06
 
 
     def update(self, speed):
         self.speed = speed
 
     def run(self, speed, measurements):
-        # distances given in mm
+        # distances given in m
         emergency_braking = False
         print("Measurements:", len(measurements))
         #print("Measurements:", measurements)
         
+        """
         for distance, angle, _, _, _ in measurements:
             #print(distance, angle)
             #if np.isnan(distance) or distance < self.lidar.min_distance or distance > self.lidar.max_distance:
@@ -41,12 +45,14 @@ class Safety:
             #    print(f"skipping: {distance}")
             collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
             #print(collision_time)
-            if angle > 150.or angle < 210.:
-                print(f"angle, distance: {angle}, {distance} ")
+            # if angle > 150.or angle < 210.:
+            print(f"angle, distance: {angle}, {distance} ")
             #if distance / max(self.speed * np.cos(np.deg2rad(angle)), 0.001) < self.threshold:
             if collision_time < self.threshold:
                 emergency_braking = True
+                print(f"<<<<<<<<<<<<<< breaking >>>>>>>>>>>>>>>>>>")
                 break
+        """
 
         return emergency_braking
 
@@ -59,7 +65,7 @@ if __name__ == "__main__":
           outputs=['angle', 'throttle'],
           threaded=True)
 
-    lidar = RPLidar2()
+    # lidar = RPLidar2()
     """
     lidar = D300Lidar(              \
         min_angle       =     0.0,  \
@@ -70,6 +76,15 @@ if __name__ == "__main__":
         angle_direction = CLOCKWISE,\
         batch_ms=1000./20.)
     """
+    print(f"main: Connecting to lidar...")
+    # lidar = HyboLidar(batch_ms=1000.0/args.rate)
+    lidar = HyboLidar(
+        min_angle=70, max_angle=110,
+        min_distance=0.2, max_distance=1.0,
+        forward_angle=90,
+        angle_direction=COUNTER_CLOCKWISE,
+        batch_ms=1000.0/20.)
+    print(f"main: Connected to lidar.")
 
     V.add(lidar, outputs=['measurements'], threaded=True)
     #print(measurements)
