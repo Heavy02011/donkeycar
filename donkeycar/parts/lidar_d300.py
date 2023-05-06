@@ -6,6 +6,8 @@ Lidar
 # requires Adafruit RPLidar driver to be installed:
 #   pip install Adafruit_CircuitPython_RPLIDAR
 #
+# https://www.waveshare.com/wiki/DTOF_LIDAR_LD19
+#
 import logging
 import sys
 import time
@@ -15,6 +17,12 @@ import serial
 import numpy as np
 from donkeycar.utils import norm_deg, dist, deg2rad, arr_to_img
 from PIL import Image, ImageDraw
+
+# specific imports
+import glob
+import serial
+import binascii
+from CalcLidarData import CalcLidarData
 
 logger = logging.getLogger("donkeycar.parts.lidar")
 
@@ -44,6 +52,297 @@ def angle_in_bounds(angle, min_angle, max_angle):
         # zero degrees, so break up test
         # into two ranges
         return (min_angle <= angle <= 360) or (max_angle >= angle >= 0)
+
+class D300Lidar(object):
+    '''
+    part for D300 lidar by ldrobot https://www.ldrobot.com/product/en/126
+    Adapted from https://github.com/Ezward/rplidar RPlidar2
+    NOTES
+    - empirical measurements show
+      scan rate is 7 scans per second
+      and 1846 measurements per second.
+    using https://github.com/adafruit/Adafruit_CircuitPython_RPLIDAR
+    '''
+    def __init__(self,
+                 min_angle = 0.0, max_angle = 360.0,
+                 min_distance = sys.float_info.min,
+                 max_distance = sys.float_info.max,
+                 forward_angle = 0.0,
+                 angle_direction=CLOCKWISE,
+                 batch_ms=50,  # how long to loop in run()
+                 debug=False):
+        
+        self.lidar = None
+        self.port = None
+        self.on = False
+
+        help = []
+        if min_distance < 0:
+            help.append("min_distance must be >= 0")
+
+        if max_distance <= 0:
+            help.append("max_distance must be > 0")
+            
+        if min_angle < 0 or min_angle > 360:
+            help.append("min_angle must be 0 <= min_angle <= 360")
+
+        if max_angle <= 0 or max_angle > 360:
+            help.append("max_angle must be 0 < max_angle <= 360")
+          
+        if forward_angle < 0 or forward_angle > 360:
+            help.append("forward_angle must be 0 <= forward_angle <= 360")
+            
+        if angle_direction != CLOCKWISE and \
+           angle_direction != COUNTER_CLOCKWISE:
+            help.append("angle-direction must be 1 (clockwise) or -1 (counter-clockwise)")  # noqa
+
+        if len(help) > 0:
+            msg = "Could not start RPLidar; bad parameters passed to constructor"
+            raise ValueError(msg + ": ".join(help))
+
+        self.min_angle = min_angle
+        self.max_angle = max_angle
+        self.min_distance = min_distance
+        self.max_distance = max_distance
+        self.forward_angle = forward_angle
+        #self.spin_reverse = (args.angle_direction != CLOCKWISE)
+        self.spin_reverse = (angle_direction != CLOCKWISE)
+        self.measurements = [] # list of (distance, angle, time, scan, index) 
+        
+        #
+        # find the serial port where the lidar is connected
+        #
+        port_found = False
+        temp_list = glob.glob ('/dev/ttyUSB*')
+        result = []
+        #for a_port in temp_list:
+        #    try:
+        #        s = serial.Serial(a_port)
+        #        s.close()
+        #        result.append(a_port)
+        #        port_found = True
+        #    except serial.SerialException:
+        #        pass
+        #if not port_found:
+        #    raise RuntimeError("No D300Lidar is connected.")
+        
+        # Setup the D300Lidar
+        PORT_NAME = "/dev/ttyUSB0"
+        ser = serial.Serial(port='/dev/ttyUSB0',
+                    baudrate=230400,
+                    timeout=5.0,
+                    bytesize=8,
+                    parity='N',
+                    stopbits=1)
+
+        self.tmpString = ""
+        self.lines = list()
+        self.angles = list()
+        self.distances = list()
+        self.loopFlag = True
+        self.flag2c = False
+        self.inumber = 0 # index of the current measurement, originally named i
+
+        # initialize
+        #self.port = result[0]
+        #self.lidar = RPLidar(None, self.port, timeout=3)
+        self.ser = ser
+        #self.lidar.clear_input()
+
+        time.sleep(1)
+
+        self.measurement_count = 0  # number of measurements in the scan
+        self.measurement_index = 0  # index of next measurement in the scan
+        self.full_scan_count = 0
+        self.full_scan_index = 0
+        self.total_measurements = 0
+        #self.iter_measurements = self.lidar.iter_measurements()
+        self.measurement_batch_ms = batch_ms
+
+        self.running = True
+        self.lidarData = None
+        print(f"D300Lidar initialized on {PORT_NAME}")
+        self.new_scan = False
+
+    def poll(self):
+        if self.running:
+            try:
+                #
+                # read one measurement
+                #
+                # new_scan, quality, angle, distance = next(self.iter_measurements)  # noqa
+                b = self.ser.read()
+                tmpInt = int.from_bytes(b, 'big')
+                #print(f"reading D300Lidar {tmpInt} {b.hex()}")
+                if (tmpInt == 0x54):
+                    #print(f"found 0x54 - new data package available")
+                    self.tmpString +=  b.hex()+" "
+                    #print(f"tmpString: {self.tmpString}")
+                    self.flag2c = True
+                    # new scan available
+                    self.new_scan = True 
+                    return
+
+                elif(tmpInt == 0x2c and self.flag2c):
+                    self.tmpString += b.hex()
+
+                    if(not len(self.tmpString[0:-5].replace(' ','')) == 90 ):
+                        self.tmpString = ""
+                        self.loopFlag = False
+                        self.flag2c = False
+                        return
+
+                    # get measurements
+                    self.lidarData = CalcLidarData(self.tmpString[0:-5])
+                    angles = self.lidarData.Angle_i
+                    distances = self.lidarData.Distance_i
+
+                    # save measurements
+                    for i in range(len(angles)):
+                        if i==0:
+                            self.new_scan = True
+                        else:
+                            self.new_scan = False
+                        angle = angles[i]*math.pi/180.0 # we need angles in deg
+                        distance = distances[i]
+                        #self.measurements.append((distance, angle, time.time(), self.full_scan_count, self.full_scan_index))
+                        
+                        ### original ##
+                        now = time.time()
+                        self.total_measurements += 1
+
+                        # check for start of new scan
+                        if self.new_scan:
+                            self.full_scan_count += 1
+                            self.full_scan_index = 0
+                            self.measurement_count = self.measurement_index  # this full scan
+                            self.measurement_index = 0   # start filling in next scan
+
+                        # follow original data transformation of RPLidar
+                        #
+                        # D300lidar spins clockwise,
+                        # but we want angles to increase counter-clockwise
+                        #
+                        if self.spin_reverse:
+                            angle = (360.0 - (angle % 360.0)) % 360.0
+                        
+                        # adjust so zero degrees is 'forward'
+                        angle = (angle - self.forward_angle + 360.0) % 360.0
+                    
+                        # filter the measurement by angle and distance
+                        if angle_in_bounds(angle, self.min_angle, self.max_angle):
+                            if distance >= self.min_distance and distance <= self.max_distance:
+                                #
+                                # A measurement is a tuple of
+                                #    (angle, distance, time, scan, index).
+                                #
+                                # distance = distance in millimeters as a float;
+                                #            zero indicates invalid measurement
+                                # angle: angle of measurement as a float
+                                # time: time in seconds as a float
+                                # scan:  full scan this measurement belongs to
+                                #        as an integer
+                                # index: index within full scan as an integer
+                                #
+                                # Note: The scan:index pair represents a natural key
+                                #       identifying the measurement. This driver
+                                #       maintains a circular buffer of measurements
+                                #       that represent the most recent 360 degrees
+                                #       of measuremenCalcLidarData("FF") #ts.  This list may include
+                                #       measurements from the current full scan and
+                                #       from the previous full scan.  So if
+                                #       run_threaded() is called rapidly
+                                #       (faster than the scan rate of the lidar),
+                                #       then the returned scans will have some new
+                                #       values and some values that may have been
+                                #       seen in the previous scan.  The scan:index
+                                #       pair can be used to
+                                #       to 'diff' scans to see which measurements
+                                #       are are 'new' and which measurements are
+                                #       shared between scans.
+                                #
+                                #       The time at which the measurement was
+                                #       aquired is also included. In a moving
+                                #       vehicle older measurements are less
+                                #       relevant; the time field can be used to
+                                #       filter out older measurements or to
+                                #       visualize them differently (fading them out
+                                #       perhaps). It may also help when using a
+                                #       kinematic model to adjust for movement
+                                #       of the lidar when attached to a vehicle.
+                                #
+                                measurement = (distance, angle, now,
+                                                self.full_scan_count, self.full_scan_index)
+                                
+                                # grow buffer if necessary, otherwise overwrite
+                                if self.measurement_index >= len(self.measurements):
+                                    self.measurements.append(measurement)
+                                    self.measurement_count = self.measurement_index + 1
+                                else:
+                                    self.measurements[self.measurement_index] = measurement  # noqa
+                                self.measurement_index += 1
+                                self.full_scan_index += 1                                
+                    #print(f"full_scan_count: {self.full_scan_count} measurements {self.measurements} ")
+                    print(f"i = {self.full_scan_count}")
+                    print(angles)
+                    print(distances)
+
+                    self.tmpString = ""
+                    self.loopFlag = False
+                else:
+                    self.tmpString += b.hex()+" "
+                
+                self.flag2c = False
+                            
+            except serial.serialutil.SerialException:
+                logger.error('SerialException from D300Lidar.')
+
+    def update(self):
+        start_time = time.time()
+        while self.running:
+            self.poll()
+            
+            time.sleep(0)  # yield time to other threads
+        total_time = time.time() - start_time
+        scan_rate = self.full_scan_count / total_time
+        measurement_rate = self.total_measurements / total_time
+        logger.info("d300Lidar total scan time = {time} seconds".format(time=total_time))
+        logger.info("d300Lidar total scan count = {count} scans".format(count=self.full_scan_count))
+        logger.info("d300Lidar total measurement count = {count} measurements".format(count=self.total_measurements))
+        logger.info("d300Lidar rate = {rate} scans per second".format(rate=scan_rate))
+        logger.info("d300Lidar rate = {rate} measurements per second".format(rate=measurement_rate))
+
+    def run_threaded(self):
+        if self.running:
+            return self.measurements
+        return []
+    
+    def run(self):
+        if not self.running:
+            return []
+        #
+        # poll for 'batch' and return it
+        # poll for time provided in constructor
+        #
+        batch_time = time.time() + self.measurement_batch_ms / 1000.0
+        while True:
+            self.poll()
+            time.sleep(0)  # yield time to other threads
+            if time.time() >= batch_time:
+                break
+        return self.measurements
+
+    def shutdown(self):
+        print(f"D300Lidar shutdown")
+        self.running = False
+        time.sleep(2)
+        if self.lidar is not None:
+            #self.lidar.stop()
+            #self.lidar.stop_motor()
+            #self.lidar.disconnect()
+            self.lidar = None
+            self.ser.close()
+
 
 
 class RPLidar2(object):
@@ -96,8 +395,7 @@ class RPLidar2(object):
         self.min_distance = min_distance
         self.max_distance = max_distance
         self.forward_angle = forward_angle
-        #self.spin_reverse = (args.angle_direction != CLOCKWISE)
-        self.spin_reverse = (angle_direction != CLOCKWISE)
+        self.spin_reverse = (args.angle_direction != CLOCKWISE)
         self.measurements = [] # list of (distance, angle, time, scan, index) 
 
         from adafruit_rplidar import RPLidar
@@ -312,7 +610,8 @@ class RPLidar(object):
                 logger.error('SerialException from Lidar')
 
     def run_threaded(self):
-        sorted_distances = []
+        #sorted_distances = []
+        sorted_distances = np.array([])
         if (self.angles != []) and (self.distances != []):
             angs = np.copy(self.angles)
             dists = np.copy(self.distances)
@@ -469,67 +768,6 @@ class LidarPlot(object):
     def shutdown(self):
         pass
 
-#rbx
-class LidarProcessor(object):
-    """
-    class that will handle the conversion of raw LIDAR data into a 2D image
-    """
-    def __init__(self, lidar_data, height, width):
-        self.height = height
-        self.width = width
-
-    def update(self, lidar_data):
-        # Convert LIDAR data to image
-        distances = lidar_data[:, 1]
-        angles = lidar_data[:, 2]
-        # transform polar coordinates into Cartesian coordinates
-        x = distances * np.cos(np.radians(angles))
-        y = distances * np.sin(np.radians(angles))
-        # shift the origin to the center of the image
-        x += self.width // 2
-        y += self.height // 2
-        # clip the points to the image size
-        x = np.clip(x, 0, self.width - 1)
-        y = np.clip(y, 0, self.height - 1)
-        # convert the Cartesian coordinates into a grayscale image
-        image = np.zeros((self.height, self.width, 1), dtype=np.uint8)
-        image[y.astype(int), x.astype(int)] = 255
-        return image
-
-    def run(self, lidar_data):
-        return self.update(lidar_data)
-
-    def run_threaded(self, lidar_data):
-        return self.run(lidar_data)
-
-
-
-#class LidarProcessor:
-
-    #def __init__(self, lidar_h, lidar_w):
-    #    self.lidar_h = lidar_h
-    #    self.lidar_w = lidar_w
-
-    #def update(self, raw_lidar_data):
-    #    # Convert raw LIDAR data to a 2D image
-    #    # This is just an example, and you should replace it with your specific conversion method
-    #    lidar_image = np.zeros((self.lidar_h, self.lidar_w), dtype=np.float32)#
-   
-    #    for point in raw_lidar_data:
-    #        x, y, z, intensity = point
-    #        row, col = self._project_point(x, y, z)
-    #        lidar_image[row, col] = intensity
-
-    #    return lidar_image
-
-    #def _project_point(self, x, y, z):
-    #    # Project 3D point (x, y, z) to 2D image coordinates (row, col)
-    #    # This is just an example, and you should replace it with your specific projection method
-    #    row = int(self.lidar_h * (y / (x + y + z)))
-    #    col = int(self.lidar_w * (x / (x + y + z)))
-
-    #    return max(0, min(self.lidar_h - 1, row)), max(0, min(self.lidar_w - 1, col))
-#rbx
 
 def mark_line(draw_context, cx, cy,
               distance_px, theta_degrees,
@@ -913,13 +1151,22 @@ if __name__ == "__main__":
         #
         # construct a lidar part
         #
-        lidar = RPLidar2(
+        #lidar = RPLidar2(
+        #    min_angle=args.min_angle, max_angle=args.max_angle,
+        #    min_distance=args.min_distance, max_distance=args.max_distance,
+        #    forward_angle=args.forward_angle,
+        #    angle_direction=args.angle_direction,
+        #    batch_ms=1000.0/args.rate)
+        
+        lidar = D300Lidar(
             min_angle=args.min_angle, max_angle=args.max_angle,
             min_distance=args.min_distance, max_distance=args.max_distance,
             forward_angle=args.forward_angle,
             angle_direction=args.angle_direction,
             batch_ms=1000.0/args.rate)
         
+        print(args.min_angle,args.max_angle,args.min_distance,args.max_distance,args.forward_angle,args.angle_direction,args.rate)
+        # 0.0 360.0 0.0 3000.0 0.0 -1 20
         #
         # construct a lidar plotter
         #
@@ -934,7 +1181,7 @@ if __name__ == "__main__":
         # start the threaded part
         # and a threaded window to show plot
         #
-        cv2.namedWindow("lidar")
+        cv2.namedWindow("testing D300 lidar")
         if args.threaded:
             lidar_thread = Thread(target=lidar.update, args=())
             lidar_thread.start()
@@ -969,6 +1216,8 @@ if __name__ == "__main__":
                 time.sleep(sleep_time)
             else:
                 time.sleep(0)  # yield time to other threads
+        """
+        """
 
     except KeyboardInterrupt:
         print('Stopping early.')
@@ -982,3 +1231,18 @@ if __name__ == "__main__":
             cv2.destroyAllWindows()
         if lidar_thread is not None:
             lidar_thread.join()  # wait for thread to end
+
+# (env) rainer@jetsonautoware46:~/projects/ldrobot-D300-lidar-test/part$ 
+# python lidar_d300.py -n 40 -d 0 -D 3000 -a 0 -A 360
+# python lidar_d300.py -n 40 -d 0 -D 3000 -a 0 -A 360 -s 1
+"""
+number of scans
+angles in radian
+distances in mm 
+rotation in clockwise direction with x pointing to the front and the cable beeing the back
+
+
+i = 8355
+[2.978229835603124, 2.990272607441885, 3.0023153792806454, 3.014358151119406, 3.026400922958167, 3.0384436947969276, 3.0504864666356886, 3.06252923847445, 3.0745720103132106, 3.0866147821519716, 3.098657553990732, 3.110700325829493]
+[161, 161, 161, 161, 161, 161, 161, 161, 161, 186, 183, 189]
+"""
