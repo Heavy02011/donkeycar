@@ -26,7 +26,7 @@ class Safety:
         self.measurement_batch_ms = batch_ms
         self.emergency_braking = False
         self.running = True
-        self.throttle = 0.2
+        # self.throttle = 0.2
 
     def poll(self): # gets called by update(), here is all the work load of the part
         if self.running:
@@ -79,7 +79,7 @@ class Safety:
     # def update(self, speed, measurements, throttle):
     def update(self):
         start_time = time.time()
-        while self.running:
+        while self.running and (self.emergency_braking == False):
             self.poll()
             time.sleep(0)  # yield time to other threads
         # self.speed = speed
@@ -96,23 +96,25 @@ class Safety:
     def run(self, speed, measurements, throttle):
         if not self.running:
             return False, 0.0
-        self.poll()
-
         self.speed = speed
         self.measurements = measurements
         self.throttle = throttle
+        self.poll()
         #
         # poll for 'batch' and return it
         # poll for time provided in constructor
         #
-        batch_time = time.time() + self.measurement_batch_ms / 1000.0
-        while True:
-            self.poll()
-            time.sleep(0)  # yield time to other threads
-            if time.time() >= batch_time:
-                break
+        # batch_time = time.time() + self.measurement_batch_ms / 1000.0
+        # while True:
+        #     self.poll()
+        #     time.sleep(0)  # yield time to other threads
+        #     if time.time() >= batch_time:
+        #         break
 
         return self.emergency_braking, self.throttle
+    
+    def shutdown(self):
+        self.running = False
      
 
 if __name__ == "__main__":
