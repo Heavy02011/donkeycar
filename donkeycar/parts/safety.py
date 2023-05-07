@@ -26,10 +26,15 @@ class Safety:
         self.measurement_batch_ms = batch_ms
         self.emergency_braking = False
         self.running = True
-        # self.throttle = 0.2
+        self.throttle = 0.0
+        self.throttle_multifier = 0
 
     def poll(self): # gets called by update(), here is all the work load of the part
         if self.running:
+            if self.throttle:
+                self.throttle_multifier = float(self.throttle)
+            else:
+                self.throttle_multifier = 0.0
             try:
                 #
                 # read one measurement
@@ -49,14 +54,19 @@ class Safety:
                         # collision_time = distance/1000. / max(self.speed * np.cos(np.deg2rad(angle)), 0.001)
                         # collision_time = distance / max(self.speed * np.cos(angle), 0.001)
                         # print(collision_time)
+                        
                         if (distance > 0.2 and distance < 0.8):
+                        # if (distance > 0.2 and distance < (0.8 + self.throttle_multifier * 0.8)):
                             self.emergency_braking = True
                             self.throttle = 0.0
-                            print(f"<<<<<<<<<<<<<< breaking {distance, self.throttle} >>>>>>>>>>>>>>>>>>")
-                            break
+                            print(f"*** <<<<<<<<<<<<<< BREAKING {distance, self.throttle} <<<<<<<<<<<<<<<<<<< ***")
+                        else:
+                            self.emergency_braking = False
+                            self.throttle_multifier = self.throttle
+                            print(f"\n>>> DRIVING {self.throttle} >>>\n")
+                            # break
                     """
                     """
-                print(f"\n>>>>> DRIVING {self.throttle} >>>>>>>>>\n")
             except:
                 logger.error('Exception from safety.py.')
 
@@ -76,23 +86,21 @@ class Safety:
                     break
             """
 
-    # def update(self, speed, measurements, throttle):
     def update(self):
         start_time = time.time()
-        while self.running and (self.emergency_braking == False):
+        while self.running:
             self.poll()
             time.sleep(0)  # yield time to other threads
-        # self.speed = speed
-        # self.measurements = measurements
-        # self.throttle = throttle
 
     # def run_threaded(self, speed, measurements):
-    def run_threaded(self):
-        # if self.running:
-        return self.emergency_braking, self.throttle
-        # return False, self.throttle
+    def run_threaded(self, speed, measurements, throttle):
+        if self.running:
+            self.speed = speed
+            self.measurements = measurements
+            self.throttle = throttle
+            return self.emergency_braking, self.throttle
+        return False, self.throttle
 
-    # def run(self):
     def run(self, speed, measurements, throttle):
         if not self.running:
             return False, 0.0
@@ -100,17 +108,6 @@ class Safety:
         self.measurements = measurements
         self.throttle = throttle
         self.poll()
-        #
-        # poll for 'batch' and return it
-        # poll for time provided in constructor
-        #
-        # batch_time = time.time() + self.measurement_batch_ms / 1000.0
-        # while True:
-        #     self.poll()
-        #     time.sleep(0)  # yield time to other threads
-        #     if time.time() >= batch_time:
-        #         break
-
         return self.emergency_braking, self.throttle
     
     def shutdown(self):
@@ -138,10 +135,11 @@ if __name__ == "__main__":
         batch_ms=1000./20.)
     """
     print(f"main: Connecting to lidar...")
+        # min_distance=0.2, max_distance=1.0,
     # lidar = HyboLidar(batch_ms=1000.0/args.rate)
     lidar = HyboLidar(
         min_angle=70, max_angle=110,
-        min_distance=0.2, max_distance=1.0,
+        min_distance=0.2, max_distance=2.0,
         forward_angle=90,
         angle_direction=COUNTER_CLOCKWISE,
         batch_ms=50.)
