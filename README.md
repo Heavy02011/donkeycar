@@ -1,5 +1,7 @@
 # Donkeycar: a python self driving library
-
+------------------------------
+"feat: raw version of part llm.py, needs refactoring & debugging"
+------------------------------
 
 ![Build Status](https://github.com/autorope/donkeycar/actions/workflows/python-package-conda.yml/badge.svg?branch=main)
 ![Lint Status](https://github.com/autorope/donkeycar/actions/workflows/superlinter.yml/badge.svg?branch=main)
