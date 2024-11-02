@@ -1,4 +1,5 @@
 # usage: python llm.py /media/rainer/_data/20-data/M3-robocar_training/donkey_datasets_private/2023-icra-london/tub_202_18-01-28
+# python llm.py /home/rainer/mycar/data
 
 # llm_analysis_part.py v22
 # GPT-4 model, DonkeyCar LLM Image Analysis Part
@@ -6,8 +7,8 @@
 import argparse
 import json
 import threading
-from langchain_community.chat_models import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
+#from langchain_community.chat_models import ChatOllama
+#from langchain_core.prompts import ChatPromptTemplate
 from PIL import Image, ImageChops
 import os
 import donkeycar as dk

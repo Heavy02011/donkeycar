@@ -45,6 +45,7 @@ class RoboHATController:
 
         try:
             self.serial = serial.Serial(cfg.MM1_SERIAL_PORT, 115200, timeout=1)
+            print("robohat, serial port:",cfg.MM1_SERIAL_PORT)
         except serial.SerialException:
             print("Serial port not found!  Please enable: sudo raspi-config")
         except serial.SerialTimeoutException:
@@ -64,6 +65,7 @@ class RoboHATController:
         Format ####,#### whereas the 1st number is steering and 2nd is throttle
         '''
         line = str(self.serial.readline().decode()).strip('\n').strip('\r')
+        print('robohat:', line)
 
         output = line.split(", ")
         if len(output) == 2:
