@@ -29,7 +29,7 @@ Image context: {context}
 Provide a detailed analysis based on the above criteria.
 """
 
-class LLMAnalysisPart(threading.Thread):
+class LLMAnalysisPart0(threading.Thread):
     def __init__(self, llm_model: str = "llava", tub_path: str = None):
         threading.Thread.__init__(self)
         self.llm_model = llm_model
@@ -55,6 +55,79 @@ class LLMAnalysisPart(threading.Thread):
         model = ChatOllama(model=self.llm_model, temperature=0.0)
         response_text = model.invoke(prompt)
 
+        analysis_result = json.loads(response_text)
+
+        self.previous_image_path = image_path
+
+        return analysis_result
+
+    def run_analysis(self, image_path: str) -> str:
+        analysis_result = self.analyze_image(image_path)
+        
+        scene = analysis_result.get('scene', '')
+        track = analysis_result.get('track', '')
+        persons = analysis_result.get('persons', [])
+        obstacles = analysis_result.get('obstacles', [])
+        objects = analysis_result.get('objects', [])
+        activities = analysis_result.get('activities', [])
+        relationships = analysis_result.get('relationships', [])
+        
+        data = {
+            'scene': scene,
+            'track': track,
+            'persons': persons,
+            'obstacles': obstacles,
+            'objects': objects,
+            'activities': activities,
+            'relationships': relationships
+        }
+
+        # Write data to tub file if available
+        if self.tub:
+            self.tub.put_record({
+                'image_path': image_path,
+                'scene': scene,
+                'track': track,
+                'persons': json.dumps(persons),
+                'obstacles': json.dumps(obstacles),
+                'objects': json.dumps(objects),
+                'activities': json.dumps(activities),
+                'relationships': json.dumps(relationships)
+            })
+
+        return json.dumps(data, indent=4)
+
+    def run(self):
+        pass  # Thread run method, not used directly for analysis
+
+    def analyze(self, image_path: str):
+        analysis_thread = threading.Thread(target=self.run_analysis, args=(image_path,))
+        analysis_thread.start()
+
+import requests
+
+ENHANCED_PROMPT_TEMPLATE = """
+Analyze the following image context and provide detailed information about the scene. Include descriptions of the following aspects:
+...
+"""
+
+class LLMAnalysisPart(threading.Thread):
+    ...
+    def analyze_image(self, image_path: str) -> dict:
+        ...
+        prompt = ENHANCED_PROMPT_TEMPLATE.format(context=context_text)
+
+        ollama_url = "OLLAMA_API_ENDPOINT"  # Replace with the actual endpoint
+        headers = {"Authorization": "Bearer YOUR_API_KEY"}  # Replace with your API key
+        payload = {
+            "model": self.llm_model,
+            "prompt": prompt,
+            "temperature": 0.0
+        }
+        response = requests.post(ollama_url, headers=headers, json=payload)
+        response_text = response.text
+
+        analysis_result = json.loads(response_text)
         analysis_result = json.loads(response_text)
 
         self.previous_image_path = image_path
