@@ -106,6 +106,8 @@ def car_dir(tmpdir_factory, base_config, imu_fields) -> str:
         record['localizer/location'] = 3 * count // len(tub)
         tub_full.write_record(record)
         count += 1
+    tub_full.close()
+    tub.close()
     return car_dir
 
 
@@ -140,6 +142,9 @@ def test_train(config: Config, data: Data) -> None:
     :param data:            test case data
     :return:                None
     """
+    if data.type in ('fastai_linear',):
+        pytest.importorskip('torch', reason='torch not installed')
+
     def pilot_path(name):
         pilot_name = f'pilot_{name}.savedmodel'
         return os.path.join(config.MODELS_PATH, pilot_name)
